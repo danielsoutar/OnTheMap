@@ -39,11 +39,17 @@ class MapTabbedController : UIViewController {
         // locationIsKnown is true. If it's false, check that the download
         // attempt was made.
         if LocationModel.currentUserLocationKnown {
+            // Should present this instead of show, as the MapViewController and
+            // MapTableViewController that call this both need to present.
             let alert = Alert(title: "",
                               message: "You have already posted a Location. Would you like to overwrite your Current Location?",
                               actionTitles: ["Overwrite", "Cancel"],
                               actionStyles: [.default, .cancel],
-                              actions: [MapTabbedController.setUpLocationEntry(from: sender, to: completion, in: region), nil])
+                              actions: [MapTabbedController.setUpLocationEntry(from: sender,
+                                                                               to: completion,
+                                                                               in: region),
+                                        nil],
+                              shouldPresent: true)
             sender.showAlert(from: alert)
             // If a download attempt was made but locationIsKnown is false,
             // that means there's no data to overwrite. Just call directly.
@@ -59,7 +65,6 @@ class MapTabbedController : UIViewController {
                                            except alert: Alert) {
         MapClient.deleteSession { success, error in
             if success {
-                print("Logging out")
                 scene.modalPresentationStyle = .fullScreen
                 sender.present(scene, animated: true, completion: nil)
             } else {

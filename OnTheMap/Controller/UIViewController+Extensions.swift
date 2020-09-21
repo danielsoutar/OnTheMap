@@ -15,6 +15,7 @@ struct Alert {
     let actionTitles: [String]
     let actionStyles: [UIAlertAction.Style?]
     let actions: [((UIAlertAction) -> Void)?]
+    var shouldPresent: Bool = false
 }
 
 extension UIViewController {
@@ -30,7 +31,11 @@ extension UIViewController {
         // A guard against displaying the alert if the controller is being
         // dismissed.
         if !self.isBeingDismissed {
-            show(alertVC, sender: nil)
+            if alert.shouldPresent {
+                present(alertVC, animated: true, completion: nil)
+            } else {
+                show(alertVC, sender: nil)
+            }
         }
     }
 }

@@ -75,6 +75,8 @@ class LocationEntryViewController: UIViewController, MKLocalSearchCompleterDeleg
                 [unowned self] (response, error) in
                 guard error == nil else {
                     print("Error in search(): " + error!.localizedDescription)
+                    self.loadingWheel.isHidden = true
+                    self.loadingWheel.stopAnimating()
                     return
                 }
                 let location = response?.mapItems[0] ?? nil

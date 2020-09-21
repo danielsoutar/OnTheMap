@@ -144,7 +144,8 @@ class MapViewController: UIViewController, MKMapViewDelegate {
                           message: "Unfortunately you failed to log out, please check your connection and try again.",
                           actionTitles: ["OK"],
                           actionStyles: [nil],
-                          actions: [nil])
+                          actions: [nil],
+                          shouldPresent: true)
         MapTabbedController.logoutFromTabbedController(from: self, to: vc, except: alert)
     }
 
@@ -172,7 +173,8 @@ class MapViewController: UIViewController, MKMapViewDelegate {
                           message: message,
                           actionTitles: ["OK"],
                           actionStyles: [nil],
-                          actions: [nil])
+                          actions: [nil],
+                          shouldPresent: true)
         showAlert(from: alert)
     }
 }

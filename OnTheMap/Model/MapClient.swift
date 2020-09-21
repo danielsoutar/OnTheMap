@@ -235,20 +235,21 @@ class MapClient {
     class func updateUserLocation(with newLatitude: Double, newLongitude: Double,
                                   locationString: String, newMediaURL: String,
                                   completion: @escaping (Bool, Error?) -> Void) -> URLSessionTask {
-        var urlRequest = URLRequest(url: Endpoints.updateLocation(LocationModel.currentUserLocation!.objectId).url)
+        let objectID = LocationModel.currentUserLocation!.objectId
+        var urlRequest = URLRequest(url: Endpoints.updateLocation(objectID).url)
         urlRequest.httpMethod = "PUT"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         let user = LocationModel.currentUserLocation
         let payload = MapUpdateLocationRequest(uniqueKey: user!.uniqueKey,
-                                               firstName: "Daniel",
-                                               lastName: "Powter",
+                                               firstName: LocationModel.currentUserInformation!.firstName,
+                                               lastName: LocationModel.currentUserInformation!.lastName,
                                                mapString: locationString,
                                                mediaURL: newMediaURL,
                                                latitude: newLatitude,
                                                longitude: newLongitude)
         urlRequest.httpBody = try! JSONEncoder().encode(payload)
         return taskForUdacityRequest(urlRequest: urlRequest,
-                                     responseType: MapCreateLocationResponse.self,
+                                     responseType: MapUpdateLocationResponse.self,
                                      shouldPreprocess: false) {
             (response, error) -> Void in
             if response != nil {
