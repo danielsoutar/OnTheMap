@@ -28,7 +28,7 @@ class DataModelRefresher {
                                   completionForUserLocation: @escaping (StudentInformation?, Error?) -> Void) {
         MapClient.loadRecentLocations(count: NUMBER_OF_RECENT_LOCATIONS,
                                       completionHandler: completionForRecentLocations)
-        if let userKey = LocationModel.currentUserAccount?.key {
+        if let userKey = LocationModel.currentUserInformation?.key {
             MapClient.loadUserLocation(key: userKey,
                                        completionHandler: completionForUserLocation)
         }

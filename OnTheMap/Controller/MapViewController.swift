@@ -41,19 +41,19 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         // LocationEntryViewController uses the region to constrain the search.
         LocationModel.boundingRegion = self.mapView.region
     }
-    
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
+
         self.mapView.reloadInputViews()
     }
-    
+
     // MARK: - Update Map Methods
-    
+
     func createAnnotation(at index: Int, from source: [StudentInformation]) -> MKPointAnnotation {
         let lat = source[index].latitude
         let long = source[index].longitude
-        
+
         let first = source[index].firstName
         let last = source[index].lastName
 
@@ -61,22 +61,24 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         annotation.coordinate = CLLocationCoordinate2D(latitude: lat, longitude: long)
         annotation.title = "\(first) \(last)"
         annotation.subtitle = URL(string: source[index].mediaURL)?.absoluteString ?? ""
-        
+
         return annotation
     }
-    
+
     func handleDownloadStudentLocations(studentLocations: [StudentInformation]?, error: Error?) {
         guard let studentLocations = studentLocations else {
-            print("Error in student locations: \(error?.localizedDescription ?? "")")
+            displayNoDataError()
             return
         }
         // Add data to the map and reload the page
         LocationModel.locations = studentLocations
+        // Clear any existing annotations prior to loading.
+        self.mapView.removeAnnotations(self.mapView.annotations)
         for i in 0..<studentLocations.count {
             annotations.append(createAnnotation(at: i, from: LocationModel.locations))
         }
         self.mapView.addAnnotations(annotations)
-        
+
         // Fail gracefully if no data available.
         // This is OK since this is wrapped within an async block in the MapClient.
         if self.mapView.annotations.count == 0 {
@@ -84,7 +86,7 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         }
         DataModelRefresher.annotationsAttemptedDownload = true
     }
-    
+
     func handleDownloadUserLocation(studentLocation: StudentInformation?, error: Error?) {
         guard let studentLocation = studentLocation else {
             print("Error in user location: \(error?.localizedDescription ?? "")")
@@ -98,19 +100,17 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         LocationModel.currentUserLocationKnown = true
 
         self.mapView.addAnnotation(userAnnotation)
-        
+
         // Not having any data for this user is not necessarily an error, so no
         // alerts here.
         DataModelRefresher.userAnnotationAttemptedDownload = true
     }
-    
+
     // MARK: - MkMapViewDelegate
 
     // Show pins for student locations
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        
         let reuseId = "pin"
-        
         var pinView = mapView.dequeueReusableAnnotationView(withIdentifier: reuseId) as? MKPinAnnotationView
 
         if pinView == nil {
@@ -122,10 +122,10 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         else {
             pinView!.annotation = annotation
         }
-        
+
         return pinView
     }
-    
+
     // Open URLs from pins
     func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView, calloutAccessoryControlTapped control: UIControl) {
         if control == view.rightCalloutAccessoryView {
@@ -135,64 +135,44 @@ class MapViewController: UIViewController, MKMapViewDelegate {
             }
         }
     }
-    
+
     // MARK: - Actions
 
     @IBAction func handleLogoutPressed(_ sender: Any) {
-        // Could follow the MovieManager and extend the UIViewController class
-        // to avoid having to write this in both the MapViewController and
-        // MapTableViewController, or alternatively have it conform to a protocol?
-        MapClient.deleteSession { success, error in
-            print("Logging out")
-            DispatchQueue.main.async {
-                let vc = self.storyboard?.instantiateViewController(withIdentifier: "LoginViewController") as! LoginViewController
-                vc.modalPresentationStyle = .fullScreen
-                self.present(vc, animated: true, completion: nil)
-            }
-        }
+        let vc = self.storyboard?.instantiateViewController(withIdentifier: "LoginViewController") as! LoginViewController
+        let alert = Alert(title: "Logout Failed",
+                          message: "Unfortunately you failed to log out, please check your connection and try again.",
+                          actionTitles: ["OK"],
+                          actionStyles: [nil],
+                          actions: [nil])
+        MapTabbedController.logoutFromTabbedController(from: self, to: vc, except: alert)
     }
-    
+
     @IBAction func handleDropPinPressed(_ sender: Any) {
-        // Raise the alert if a user has some data to overwrite, meaning
-        // locationIsKnown is true. If it's false, check that the download
-        // attempt was made.
-        if LocationModel.currentUserLocationKnown {
-            let alertVC = UIAlertController(title: "",
-                message: "You have already posted a Location. Would you like to overwrite your Current Location?",
-                preferredStyle: .alert)
-            alertVC.addAction(UIAlertAction(title: "Overwrite", style: .default, handler: self.setUpLocationEntry))
-            alertVC.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-            show(alertVC, sender: nil)
-            // If a download attempt was made but locationIsKnown is false, that
-            // means there's no data to overwrite. Just call directly.
-        } else if DataModelRefresher.userAnnotationAttemptedDownload {
-            setUpLocationEntry(nil)
-        }
-        // Do nothing otherwise, since we are still waiting to know if the
-        // user has data they may be overwriting.
+        // Make this a closure so that the scene is only created when actually
+        // making the transition.
+        // Currently a bug where this controller wrongly transitions to another black
+        // scene when making the alert on the navigation stack (despite every other alert
+        // not having this issue). It also obscures the alert, and when clicking
+        // either button incorrectly logs out. This is not documented and is
+        // completely beyond me. The controller to transition to is ***only***
+        // created when the transition is meant to be made.
+        let makeVC = { return self.storyboard?.instantiateViewController(
+            withIdentifier: "LocationEntryViewController") as! LocationEntryViewController }
+        MapTabbedController.checkAndInitLocationEntry(from: self,
+                                                      in: self.mapView.region,
+                                                      completion: makeVC)
     }
 
-    // MARK: - Helpers
-
-    func setUpLocationEntry(_ action: UIAlertAction?) -> Void {
-        let vc = storyboard?.instantiateViewController(withIdentifier: "LocationEntryViewController") as! LocationEntryViewController
-        vc.modalPresentationStyle = .fullScreen
-        vc.regionToSearch = self.mapView.region
-        self.present(vc, animated: true, completion: nil)
-    }
-    
     // MARK: - Error Messaging
-    
+
     func displayNoDataError() {
         let message = "Unfortunately no data seems to be available - checking your internet connection and restarting the app may help."
-        let alertVC = UIAlertController(title: "No Data Available", message: message, preferredStyle: .alert)
-        alertVC.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
-        
-        // Not sure how best to guard against a slow connection if a user attempts
-        // to log out before the download is done.
-        if !self.isBeingDismissed {
-            self.present(alertVC, animated: true, completion: nil)
-        }
+        let alert = Alert(title: "No Data Available",
+                          message: message,
+                          actionTitles: ["OK"],
+                          actionStyles: [nil],
+                          actions: [nil])
+        showAlert(from: alert)
     }
-
 }

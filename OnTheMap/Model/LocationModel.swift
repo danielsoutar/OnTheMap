@@ -13,6 +13,7 @@ class LocationModel {
     
     static var currentUserAccount: UdacityAccount?
     static var currentUserLocation: StudentInformation?
+    static var currentUserInformation: UserInformation?
     static var currentUserLocationKnown = false
     static var locations = [StudentInformation]()
     

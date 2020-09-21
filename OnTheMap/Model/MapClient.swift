@@ -22,7 +22,7 @@ class MapClient {
         case postSession
         case deleteSession
         case getLocations(String, String, String, String)
-        case getUserInfo(String)
+        case getUserInfo
         case createLocation
         case updateLocation(String)
 
@@ -32,7 +32,7 @@ class MapClient {
             case .deleteSession: return Endpoints.base + "/session"
             case .getLocations(let limit, let skip, let order, let key):
                 return Endpoints.base + "/StudentLocation" + limit + skip + order + key
-            case .getUserInfo(let userID): return Endpoints.base + "users/\(userID)"
+            case .getUserInfo: return Endpoints.base + "/users/\(LocationModel.currentUserAccount!.key)"
             case .createLocation: return Endpoints.base + "/StudentLocation"
             case .updateLocation(let objectID): return Endpoints.base + "/StudentLocation/\(objectID)"
             }
@@ -46,9 +46,12 @@ class MapClient {
     // Note that we always call the completion handler on the main thread, meaning async blocks
     // can be hoisted out of the corresponding view controller.
     class func taskForGETRequest<ResponseType: Decodable>(url: URL,
-                responseType: ResponseType.Type,
+                responseType: ResponseType.Type, shouldPreprocess: Bool,
                 completion: @escaping (ResponseType?, Error?) -> Void) -> URLSessionTask {
-        // No special characters at the beginning for the get requests, so no need for that.
+        // No special characters at the beginning for some get requests, but the
+        // user info request does, so have a default flag to enable the skipping.
+        let preprocess = { (data: Data) -> Data in return data.subdata(in: 5..<data.count) }
+
         let session = URLSession.shared
         let task = session.dataTask(with: url) { data, response, requestError in
             guard let data = data, requestError == nil else {
@@ -57,10 +60,11 @@ class MapClient {
                 }
                 return
             }
-
+            let preprocessedData = shouldPreprocess ? preprocess(data) : data
             let decoder = JSONDecoder()
             do {
-                let responseObject = try decoder.decode(responseType.self, from: data)
+                let responseObject = try decoder.decode(responseType.self,
+                                                        from: preprocessedData)
                 DispatchQueue.main.async {
                     completion(responseObject, nil)
                 }
@@ -75,7 +79,8 @@ class MapClient {
     
     class func loadRecentLocations(count: Int, completionHandler: @escaping ([StudentInformation]?, Error?) -> Void) {
         let task = taskForGETRequest(url: Endpoints.getLocations("?limit=\(count)", "", "&order=-updatedAt", "").url,
-                                     responseType: StudentInformationResults.self) {
+                                     responseType: StudentInformationResults.self,
+                                     shouldPreprocess: false) {
                                         (response, error) in
                                         if let response = response {
                                             completionHandler(response.results, nil)
@@ -89,7 +94,8 @@ class MapClient {
     
     class func loadUserLocation(key: String, completionHandler: @escaping (StudentInformation?, Error?) -> Void) {
         let task = taskForGETRequest(url: Endpoints.getLocations("", "", "", "?uniqueKey=\(key)").url,
-                                     responseType: StudentInformationResults.self) {
+                                     responseType: StudentInformationResults.self,
+                                     shouldPreprocess: false) {
                                         (response, error) in
                                         if let response = response {
                                             completionHandler(response.results[0], nil)
@@ -102,7 +108,7 @@ class MapClient {
     }
     
     class func taskForUdacityRequest<ResponseType: Decodable>(
-        urlRequest: URLRequest, responseType: ResponseType.Type,
+        urlRequest: URLRequest, responseType: ResponseType.Type, shouldPreprocess: Bool,
         completion: @escaping (ResponseType?, Error?) -> Void) -> URLSessionTask {
         let preprocess = { (data: Data) -> Data in return data.subdata(in: 5..<data.count) }
 
@@ -116,10 +122,9 @@ class MapClient {
                 }
                 return
             }
-            print(String(data: data, encoding: .utf8)!)
             let decoder = JSONDecoder()
             do {
-                let preprocessedData = preprocess(data)
+                let preprocessedData = shouldPreprocess ? preprocess(data) : data
                 let responseObject = try decoder.decode(ResponseType.self, from: preprocessedData)
                 DispatchQueue.main.async {
                     completion(responseObject, nil)
@@ -145,7 +150,7 @@ class MapClient {
         urlRequest.httpBody = "{\"udacity\": {\"username\": \"\(username)\", \"password\": \"\(password)\"}}".data(using: .utf8)
 
         let task = taskForUdacityRequest(urlRequest: urlRequest,
-                                         responseType: MapAuthResponse.self) {
+                                         responseType: MapAuthResponse.self, shouldPreprocess: true) {
             (response, error) -> Void in
             if let response = response {
                 LocationModel.currentUserAccount = response.account
@@ -158,6 +163,21 @@ class MapClient {
         task.resume()
     }
     
+    class func getUserData(completion: @escaping (Bool, Error?) -> Void) {
+        let task = taskForGETRequest(url: Endpoints.getUserInfo.url,
+                                     responseType: UserInformation.self,
+                                     shouldPreprocess: true) {
+            (response, error) in
+            if let response = response {
+                LocationModel.currentUserInformation = response
+                completion(true, nil)
+            } else {
+                completion(false, error)
+            }
+        }
+        task.resume()
+    }
+
     class func deleteSession(completion: @escaping (Bool, Error?) -> Void) {
         // Configure the request
         var urlRequest = URLRequest(url: Endpoints.deleteSession.url)
@@ -173,7 +193,8 @@ class MapClient {
         }
         
         let task = taskForUdacityRequest(urlRequest: urlRequest,
-                                         responseType: MapDeauthResponse.self) {
+                                         responseType: MapDeauthResponse.self,
+                                         shouldPreprocess: true) {
             (response, error) -> Void in
             if response != nil {
                 completion(true, nil)
@@ -190,17 +211,18 @@ class MapClient {
         var urlRequest = URLRequest(url: Endpoints.createLocation.url)
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        let user = LocationModel.currentUserLocation
-        let payload = MapUpdateLocationRequest(uniqueKey: user?.uniqueKey ?? "",
-                                               firstName: "Daniel",
-                                               lastName: "Powter",
+        let key = LocationModel.currentUserAccount!.key
+        let payload = MapUpdateLocationRequest(uniqueKey: key,
+                                               firstName: LocationModel.currentUserInformation!.firstName,
+                                               lastName: LocationModel.currentUserInformation!.lastName,
                                                mapString: locationString,
                                                mediaURL: newMediaURL,
                                                latitude: newLatitude,
                                                longitude: newLongitude)
         urlRequest.httpBody = try! JSONEncoder().encode(payload)
         return taskForUdacityRequest(urlRequest: urlRequest,
-                                     responseType: MapCreateLocationResponse.self) {
+                                     responseType: MapCreateLocationResponse.self,
+                                     shouldPreprocess: false) {
             (response, error) -> Void in
             if response != nil {
                 completion(true, nil)
@@ -226,7 +248,8 @@ class MapClient {
                                                longitude: newLongitude)
         urlRequest.httpBody = try! JSONEncoder().encode(payload)
         return taskForUdacityRequest(urlRequest: urlRequest,
-                                     responseType: MapCreateLocationResponse.self) {
+                                     responseType: MapCreateLocationResponse.self,
+                                     shouldPreprocess: false) {
             (response, error) -> Void in
             if response != nil {
                 completion(true, nil)
@@ -240,8 +263,7 @@ class MapClient {
                                        locationString: String, newMediaURL: String,
                                        completion: @escaping (Bool, Error?) -> Void) {
         // Check if user has any prior locations in the location model...
-        let hasPriorLocationInModel = LocationModel.currentUserLocation != nil
-        print("hasPriorLocationInModel: \(hasPriorLocationInModel)")
+        let hasPriorLocationInModel = LocationModel.currentUserLocationKnown
         var task: URLSessionTask?
         // If so, update.
         if hasPriorLocationInModel {
@@ -255,5 +277,7 @@ class MapClient {
                                          completion: completion)
         }
         task!.resume()
+        // Location will now be known - the latest one added.
+        LocationModel.currentUserLocationKnown = true
     }
 }
